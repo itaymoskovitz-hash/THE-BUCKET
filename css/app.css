@@ -75,7 +75,7 @@ main:focus { outline: none; }
 }
 .app-header > * { max-width: 680px; margin-inline: auto; }
 .brand-row { display: flex; align-items: center; gap: 12px; }
-.brand-mark { border-radius: 8px; flex: none; }
+.brand-mark { border-radius: 10px; flex: none; }
 .titles { flex: 1; min-width: 0; }
 .family-name { font-size: 13px; font-weight: 500; color: var(--accent); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .page-title { font-size: 22px; font-weight: 700; }
@@ -159,7 +159,7 @@ select.input { padding-inline-end: 32px; appearance: none;
   display: flex; flex-direction: column; gap: 20px; align-items: stretch;
 }
 .auth-brand { display: flex; flex-direction: column; align-items: center; gap: 8px; }
-.auth-brand img { border-radius: 14px; }
+.auth-logo { display: block; width: 168px; height: 168px; }
 .wordmark { font: 700 24px/1 var(--font-display); letter-spacing: -.01em; }
 .auth-card { display: flex; flex-direction: column; gap: 16px; padding: 24px 20px; }
 .auth-alt { display: flex; flex-direction: column; align-items: center; gap: 8px; font-size: 15px; }

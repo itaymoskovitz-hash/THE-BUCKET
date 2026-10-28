@@ -37,7 +37,7 @@ export function OnboardingView({ onJoined, inviteError }) {
 
   const view = h('div.page.auth-page',
     h('main.auth-wrap#main',
-      h('div.auth-brand', h('img', { src: 'assets/logo.svg', alt: '', width: 56, height: 56 }), h('p.wordmark', bdi('The Bucket'))),
+      h('div.auth-brand', h('img.auth-logo', { src: 'assets/logo-badge.svg', alt: 'The Bucket', width: 168, height: 168 })),
       h('div.card.auth-card',
         h('h1.page-title', 'ברוכים הבאים'),
         h('p.muted', 'כדי להתחיל, צרו משפחה חדשה או הצטרפו למשפחה שהזמינה אתכם.'),

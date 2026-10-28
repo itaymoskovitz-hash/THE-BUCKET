@@ -197,7 +197,7 @@ export function ListView() {
   const view = h('div.page.list-page',
     h('header.app-header',
       h('div.brand-row',
-        h('img.brand-mark', { src: 'assets/logo.svg', alt: '', width: 32, height: 32 }),
+        h('img.brand-mark', { src: 'assets/logo.svg', alt: '', width: 40, height: 40 }),
         h('div.titles',
           h('p.family-name', fam.name),
           h('h1.page-title', 'רשימת הקניות')),
