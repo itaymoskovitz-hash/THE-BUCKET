@@ -159,7 +159,7 @@ select.input { padding-inline-end: 32px; appearance: none;
   display: flex; flex-direction: column; gap: 20px; align-items: stretch;
 }
 .auth-brand { display: flex; flex-direction: column; align-items: center; gap: 8px; }
-.auth-logo { display: block; width: 168px; height: 168px; }
+.auth-logo { display: block; width: 120px; height: 120px; }
 .wordmark { font: 700 24px/1 var(--font-display); letter-spacing: -.01em; }
 .auth-card { display: flex; flex-direction: column; gap: 16px; padding: 24px 20px; }
 .auth-alt { display: flex; flex-direction: column; align-items: center; gap: 8px; font-size: 15px; }

@@ -11,7 +11,7 @@ function shell(title, subtitle, ...content) {
   return h('div.page.auth-page',
     h('main.auth-wrap#main',
       h('div.auth-brand',
-        h('img.auth-logo', { src: 'assets/logo-badge.svg', alt: 'The Bucket', width: 168, height: 168 })),
+        h('img.auth-logo', { src: 'assets/logo.svg', alt: 'The Bucket', width: 120, height: 120 })),
       h('div.card.auth-card',
         h('h1.page-title', title),
         subtitle && h('p.muted', subtitle),
