@@ -163,7 +163,7 @@ export function ListView() {
         } }, icon('trash', 16), 'ניקוי נקנו')),
       h('ul.items', done.map(itemRow))) : null;
 
-    listHost.replaceChildren(...sections.filter(Boolean), allDone, doneSection);
+    listHost.replaceChildren(...[...sections, allDone, doneSection].filter(Boolean));
   }
 
   function editItem(item) {
