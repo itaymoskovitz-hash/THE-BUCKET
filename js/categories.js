@@ -70,11 +70,19 @@ const INDEX = Object.entries(KEYWORDS)
   // longest keyword wins (so "שקיות אשפה" beats "שקי…", "חלב סויה" stays dairy, "מלפפון חמוץ" goes to pantry)
   .sort((a, b) => b.w.length - a.w.length);
 
+// Word prefixes (after final-letter normalization) that decide the aisle regardless of the product.
+const MODIFIERS = [
+  [/^ו?(ה)?קפוא/, 6],             // קפוא / קפואה / קפואים / הקפוא
+  [/^ו?(ה)?(משומר|שימורי)/, 5],   // משומר / משומרת / שימורים
+];
+
 /** Guess a category for an item name. Returns 1–12; unknown → 12 (שונות). */
 export function categorize(name) {
   const n = normalize(name || '');
   if (!n) return OTHER;
   const words = n.split(/[\s,.\-/]+/);
+  // Modifiers beat the product word: "אננס קפוא" is frozen, "תירס משומר" is pantry.
+  for (const [re, cat] of MODIFIERS) if (words.some((w) => re.test(w))) return cat;
   for (const { cat, w, exact } of INDEX) {
     if (exact ? words.includes(w) : n.includes(w)) return cat;
   }
