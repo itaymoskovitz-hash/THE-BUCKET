@@ -5,6 +5,8 @@ import * as store from '../store.js';
 import { navigate } from '../router.js';
 
 const inFlight = new Set(); // normalized names currently being added (blocks double taps)
+// Categories the user opened. Kept only in memory, so every new visit to the app starts with all categories closed.
+const openCats = new Set();
 const key = (s) => s.trim().replace(/\s+/g, ' ');
 
 export function ListView() {
@@ -44,16 +46,24 @@ export function ListView() {
     h('label.field-inline', h('span', 'כמות'), qtyIn),
     h('label.field-inline', h('span', 'קטגוריה'), catSel)));
 
+  let holdTimer;
+  form.addEventListener('focusout', () => {
+    form.classList.add('hold'); clearTimeout(holdTimer);
+    holdTimer = setTimeout(() => form.classList.remove('hold'), 400);
+  });
+
   async function add(name, quantity, category, btn) {
     const k = key(name).toLowerCase();
     if (inFlight.has(k)) return false;
     const existing = store.visibleItems().find((i) => sameName(i.name, name));
     if (existing && !existing.purchased) {
       toast(`״${existing.name}״ כבר ברשימה`);
+      if (!openCats.has(existing.category)) { openCats.add(existing.category); renderList(); }
       flash(existing.id);
       return true;
     }
     inFlight.add(k); renderChips();
+    openCats.add(existing ? existing.category : category); // show the item you just added
     try {
       if (existing && existing.purchased) {
         await store.setPurchased(existing.id, false);
@@ -139,9 +149,20 @@ export function ListView() {
       const rows = remaining.filter((i) => i.category === c.id)
         .sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
       if (!rows.length) return null;
-      return h('section.cat', { 'aria-labelledby': `cat-${c.id}` },
-        h('h3.cat-title#cat-' + c.id, c.name, h('span.count', String(rows.length))),
-        h('ul.items', rows.map(itemRow)));
+      const open = openCats.has(c.id);
+      const list = h('ul.items#cat-items-' + c.id, { hidden: !open }, rows.map(itemRow));
+      return h('section.cat', { class: open ? 'is-open' : '' },
+        h('h3.cat-head',
+          h('button.cat-toggle', {
+            type: 'button', 'aria-expanded': String(open), 'aria-controls': `cat-items-${c.id}`,
+            onclick: () => { open ? openCats.delete(c.id) : openCats.add(c.id); renderList(); },
+          },
+          h('span.cat-text',
+            h('span.cat-name', c.name),
+            !open && h('span.cat-preview', bdi(rows.map((i) => i.name).join(', ')))),
+          h('span.count', String(rows.length)),
+          h('span.chev', icon('chevronDown', 20)))),
+        list);
     });
 
     const allDone = !remaining.length && done.length
@@ -173,7 +194,7 @@ export function ListView() {
     const err = h('p.form-error', { role: 'alert', hidden: true });
     const save = h('button.btn.btn-primary', { type: 'button', onclick: async () => {
       if (!key(n.value)) { err.hidden = false; err.textContent = 'יש להזין שם מוצר.'; n.focus(); return; }
-      try { await busy(save, () => store.updateItem(item.id, { name: key(n.value), quantity: q.value, category: Number(c.value) })); dlg.close(); }
+      try { openCats.add(Number(c.value)); await busy(save, () => store.updateItem(item.id, { name: key(n.value), quantity: q.value, category: Number(c.value) })); dlg.close(); }
       catch (e) { err.hidden = false; err.textContent = heError(e); }
     } }, 'שמירה');
     const dlg = openDialog({
