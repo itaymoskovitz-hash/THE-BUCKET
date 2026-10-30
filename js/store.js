@@ -10,6 +10,9 @@ export const state = {
   items: new Map(),      // id -> row (confirmed by the database)
   pending: new Map(),    // client_ref -> optimistic row not yet confirmed
   sync: 'idle',          // 'idle' | 'loading' | 'live' | 'reconnecting' | 'error'
+  prices: new Map(),     // item_code -> price_products row, for the family's chosen branch
+  links: new Map(),      // name key -> item_code (remembered product choices)
+  priceStore: null,      // { chain_id, store_id, name, city } of the chosen branch
   loadError: null,
 };
 
@@ -23,11 +26,12 @@ export const currentFamily = () => state.families.find((f) => f.id === state.fam
 export async function loadFamilies() {
   const { data, error } = await sb
     .from('family_members')
-    .select('role, families ( id, name )')
+    .select('role, families ( id, name, price_chain_id, price_store_id )')
     .eq('user_id', state.user.id);
   if (error) throw error;
   state.families = (data || []).filter((r) => r.families)
-    .map((r) => ({ id: r.families.id, name: r.families.name, role: r.role }))
+    .map((r) => ({ id: r.families.id, name: r.families.name, role: r.role,
+      priceChainId: r.families.price_chain_id, priceStoreId: r.families.price_store_id }))
     .sort((a, b) => a.name.localeCompare(b.name, 'he'));
   let pref = null;
   try { pref = localStorage.getItem(PREF_KEY); } catch { /* storage unavailable */ }
@@ -49,6 +53,7 @@ function applyRow(row) {
   if (row.family_id !== state.familyId) return;
   if (row.client_ref) state.pending.delete(row.client_ref);
   if (newer(state.items.get(row.id), row)) state.items.set(row.id, row);
+  if (row.item_code && !state.prices.has(row.item_code)) refreshPrices();
 }
 
 export async function fetchItems() {
@@ -61,6 +66,7 @@ export async function fetchItems() {
   state.items = new Map(data.map((r) => [r.id, r]));
   for (const r of data) if (r.client_ref) state.pending.delete(r.client_ref);
   emit();
+  refreshPrices();
 }
 
 let channel = null;
@@ -117,8 +123,9 @@ export async function addItem({ name, quantity, category }) {
     created_at: new Date().toISOString(), updated_at: new Date(0).toISOString(),
   };
   state.pending.set(client_ref, optimistic); emit();
+  const item_code = state.links.get(nameKey(optimistic.name)) || null; // remembered product for this name
   const { data, error } = await sb.from('shopping_items')
-    .insert({ family_id: state.familyId, name: optimistic.name, quantity: optimistic.quantity, category, client_ref })
+    .insert({ family_id: state.familyId, name: optimistic.name, quantity: optimistic.quantity, category, client_ref, item_code })
     .select().single();
   if (error) {
     // a retry of the same client_ref would hit the unique constraint; treat as success and refetch
@@ -197,6 +204,124 @@ export async function listInvitations(fid) {
 
 export function resetState() {
   stopSync();
-  Object.assign(state, { user: null, families: [], familyId: null, items: new Map(), pending: new Map(), loadError: null });
+  Object.assign(state, { user: null, families: [], familyId: null, items: new Map(), pending: new Map(), loadError: null,
+    prices: new Map(), links: new Map(), priceStore: null });
   emit();
+}
+
+// ───────── Prices (Victory, official price-transparency files) ─────────
+export const VICTORY_CHAINS = ['7290696200003', '7290058103393'];
+export const nameKey = (s) => String(s || '').trim().replace(/\s+/g, ' ').toLowerCase().slice(0, 80);
+
+/** Leading number in a free-text quantity: "2" → 2, "1.5 ק״ג" → 1.5, "" → 1 */
+export function qtyNumber(q) {
+  const m = String(q || '').replace(',', '.').match(/\d+(\.\d+)?/);
+  const n = m ? Number(m[0]) : 1;
+  return n > 0 && n < 1000 ? n : 1;
+}
+
+let priceTimer = null;
+/** Reload the branch, remembered links and the prices of linked items (debounced). */
+export function refreshPrices() {
+  clearTimeout(priceTimer);
+  priceTimer = setTimeout(loadPrices, 150);
+}
+
+export async function loadPrices() {
+  const fam = currentFamily();
+  if (!fam) return;
+  const fid = fam.id;
+  try {
+    const { data: links } = await sb.from('family_item_links').select('name_key, item_code').eq('family_id', fid);
+    if (fid !== state.familyId) return;
+    state.links = new Map((links || []).map((l) => [l.name_key, l.item_code]));
+    if (!fam.priceStoreId) { state.priceStore = null; state.prices = new Map(); emit(); return; }
+    if (!state.priceStore || state.priceStore.store_id !== fam.priceStoreId || state.priceStore.chain_id !== fam.priceChainId) {
+      const { data: st } = await sb.from('price_stores').select('chain_id, store_id, name, city, address')
+        .eq('chain_id', fam.priceChainId).eq('store_id', fam.priceStoreId).maybeSingle();
+      state.priceStore = st || { chain_id: fam.priceChainId, store_id: fam.priceStoreId, name: `סניף ${fam.priceStoreId}` };
+      state.prices = new Map();
+    }
+    const codes = [...new Set([...state.items.values()].map((i) => i.item_code).filter(Boolean))];
+    if (codes.length) {
+      const { data } = await sb.from('price_products')
+        .select('item_code, name, manufacturer, price, unit_price, unit_of_measure, unit_qty, quantity, is_weighted, imported_at')
+        .eq('chain_id', fam.priceChainId).eq('store_id', fam.priceStoreId).in('item_code', codes);
+      if (fid !== state.familyId) return;
+      state.prices = new Map((data || []).map((p) => [p.item_code, p]));
+    }
+    emit();
+  } catch { /* prices are optional; the list keeps working without them */ }
+}
+
+/** Price info for one list item, or null. */
+export function itemPrice(item) {
+  if (!state.priceStore || !item.item_code) return null;
+  const p = state.prices.get(item.item_code);
+  if (!p) return { missing: true };
+  const n = qtyNumber(item.quantity);
+  return { product: p, each: Number(p.price), total: Number(p.price) * n, qty: n, weighted: p.is_weighted };
+}
+
+/** Estimated total of the items still needed. */
+export function listTotal() {
+  let sum = 0, priced = 0, count = 0;
+  for (const i of state.items.values()) {
+    if (i.purchased) continue;
+    count++;
+    const p = itemPrice(i);
+    if (p && !p.missing) { sum += p.total; priced++; }
+  }
+  return { sum, priced, count };
+}
+
+export async function searchProducts(query) {
+  const st = state.priceStore;
+  if (!st) return [];
+  const { data, error } = await sb.rpc('search_price_products', { p_chain_id: st.chain_id, p_store_id: st.store_id, p_query: query, p_limit: 25 });
+  if (error) throw error;
+  return data || [];
+}
+
+/** Link a list item to a catalog product, and remember the choice for next time. */
+export async function linkItem(item, product, remember = true) {
+  await patch(item.id, { item_code: product ? product.item_code : null });
+  if (product) state.prices.set(product.item_code, product);
+  const k = nameKey(item.name);
+  if (remember && product) {
+    const { error } = await sb.from('family_item_links')
+      .upsert({ family_id: state.familyId, name_key: k, item_code: product.item_code, updated_at: new Date().toISOString() });
+    if (!error) state.links.set(k, product.item_code);
+  } else if (!product) {
+    await sb.from('family_item_links').delete().eq('family_id', state.familyId).eq('name_key', k);
+    state.links.delete(k);
+  }
+  emit();
+}
+
+export async function searchStores(query) {
+  let q = sb.from('price_stores').select('chain_id, store_id, name, city, address').in('chain_id', VICTORY_CHAINS)
+    .order('city').order('name').limit(60);
+  const t = String(query || '').trim();
+  if (t) q = q.or(`name.ilike.%${t.replace(/[%,()]/g, '')}%,city.ilike.%${t.replace(/[%,()]/g, '')}%`);
+  const { data, error } = await q;
+  if (error) throw error;
+  return data || [];
+}
+
+export async function priceStatus() {
+  const st = state.priceStore;
+  if (!st) return null;
+  const { data } = await sb.from('price_products').select('imported_at').eq('chain_id', st.chain_id).eq('store_id', st.store_id)
+    .order('imported_at', { ascending: false }).limit(1);
+  return data?.[0]?.imported_at || null;
+}
+
+export async function setFamilyStore(fid, chainId, storeId) {
+  const { error } = await sb.rpc('set_family_store', { p_family_id: fid, p_chain_id: chainId, p_store_id: storeId });
+  if (error) throw error;
+  const f = state.families.find((x) => x.id === fid);
+  if (f) { f.priceChainId = storeId ? chainId : null; f.priceStoreId = storeId; }
+  state.priceStore = null; state.prices = new Map();
+  refreshPrices();
 }

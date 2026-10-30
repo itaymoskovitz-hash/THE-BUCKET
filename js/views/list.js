@@ -8,10 +8,13 @@ const inFlight = new Set(); // normalized names currently being added (blocks do
 // Categories the user opened. Kept only in memory, so every new visit to the app starts with all categories closed.
 const openCats = new Set();
 const key = (s) => s.trim().replace(/\s+/g, ' ');
+const ils = new Intl.NumberFormat('he-IL', { style: 'currency', currency: 'ILS', minimumFractionDigits: 2 });
+const money = (n) => ils.format(n);
 
 export function ListView() {
   const fam = store.currentFamily();
   const stats = h('div.stats', { 'aria-live': 'polite' });
+  const totalLine = h('p.total-line', { hidden: true });
   const syncBar = h('div.sync-bar', { role: 'status' });
   const listHost = h('div.list-host');
   const chips = h('div.chips', { role: 'group', 'aria-label': 'הוספה מהירה' });
@@ -97,6 +100,64 @@ export function ListView() {
     }));
   }
 
+  // ── Prices ──
+  function priceTag(item) {
+    if (!store.state.priceStore || item.pending) return null;
+    const p = store.itemPrice(item);
+    if (item.purchased) return p && !p.missing ? h('span.price.is-muted', money(p.total)) : null;
+    if (!p) return h('button.price-link', { type: 'button', 'aria-label': `התאמת מחיר ל${item.name}`, onclick: () => matchItem(item) }, 'מחיר?');
+    if (p.missing) return h('button.price-link', { type: 'button', onclick: () => matchItem(item) }, 'לא נמצא בסניף');
+    const label = p.weighted ? `${money(p.each)} לק״ג` : (p.qty !== 1 ? `${money(p.total)}` : money(p.each));
+    return h('button.price', {
+      type: 'button',
+      title: p.product.name,
+      'aria-label': `${p.product.name}, ${label}. הקישו להחלפת המוצר`,
+      onclick: () => matchItem(item),
+    }, label);
+  }
+
+  function matchItem(item) {
+    const q = h('input.input#match-q', { type: 'search', value: item.name, autocomplete: 'off', 'aria-label': 'חיפוש מוצר בסניף' });
+    const remember = h('input#match-remember', { type: 'checkbox', checked: true });
+    const results = h('ul.match-list', { 'aria-live': 'polite' });
+    let timer, seq = 0;
+    async function run() {
+      const my = ++seq;
+      const t = q.value.trim();
+      if (t.length < 2) { results.replaceChildren(h('li.muted', 'הקלידו לפחות 2 אותיות.')); return; }
+      results.replaceChildren(h('li.muted', 'מחפש…'));
+      try {
+        const rows = await store.searchProducts(t);
+        if (my !== seq) return;
+        results.replaceChildren(...(rows.length ? rows.map((p) => h('li',
+          h('button.match-row', { type: 'button', onclick: async (e) => {
+            try { await busy(e.currentTarget, () => store.linkItem(item, p, remember.checked)); dlg.close(); toast('המחיר עודכן', { kind: 'success' }); }
+            catch (err) { toast(heError(err), { kind: 'error' }); }
+          } },
+          h('span.match-main', h('span.match-name', bdi(p.name)),
+            h('span.muted.small', bdi([p.manufacturer, p.quantity && p.unit_qty ? `${Number(p.quantity)} ${p.unit_qty}` : null].filter(Boolean).join(' · ')))),
+          h('span.match-price', p.is_weighted ? `${money(p.price)} לק״ג` : money(p.price)))))
+          : [h('li.muted', 'לא נמצאו מוצרים. נסו מילה אחרת, למשל שם המותג.')]));
+      } catch (err) { if (my === seq) results.replaceChildren(h('li.form-error', heError(err))); }
+    }
+    q.addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(run, 250); });
+    const dlg = openDialog({
+      title: 'בחירת מוצר מהסניף',
+      body: h('div.stack',
+        h('p.muted.small', 'בחרו את המוצר המדויק כדי לראות את המחיר שלו ב', bdi(store.state.priceStore.name), '.'),
+        q,
+        h('label.check-line', remember, h('span', `לזכור שכשכותבים ״${item.name}״ הכוונה למוצר הזה`)),
+        results),
+      actions: [
+        item.item_code && h('button.btn.btn-text.btn-danger-text', { type: 'button', onclick: async () => {
+          try { await store.linkItem(item, null); dlg.close(); } catch (err) { toast(heError(err), { kind: 'error' }); }
+        } }, 'הסרת ההתאמה'),
+        h('button.btn.btn-secondary', { type: 'button', onclick: () => dlg.close() }, 'סגירה'),
+      ].filter(Boolean),
+    });
+    q.select(); run();
+  }
+
   // ── Item rows ──
   function itemRow(item) {
     const label = `${item.name}${item.quantity ? `, ${item.quantity}` : ''}`;
@@ -112,7 +173,8 @@ export function ListView() {
       }, h('span.box', icon('check', 18))),
       h('div.item-text',
         h('span.item-name', bdi(item.name)),
-        item.quantity && h('span.qty', bdi(item.quantity))),
+        item.quantity && h('span.qty', bdi(item.quantity)),
+        priceTag(item)),
       !item.pending && h('button.icon-btn', { type: 'button', 'aria-label': `עריכת ${item.name}`, onclick: () => editItem(item) }, icon('pencil', 18)));
   }
 
@@ -124,6 +186,15 @@ export function ListView() {
     stats.replaceChildren(
       h('div.stat', h('strong', String(remaining.length)), h('span', 'נשאר לקנות')),
       h('div.stat.stat-done', h('strong', String(done.length)), h('span', 'נקנו')));
+
+    const ps = store.state.priceStore;
+    totalLine.hidden = !ps || !remaining.length;
+    if (ps && remaining.length) {
+      const t = store.listTotal();
+      totalLine.replaceChildren(
+        h('span', 'סה״כ משוער ', h('strong', money(t.sum))),
+        h('span.muted.total-sub', `מחירים ל־${t.priced} מתוך ${t.count} מוצרים · `, bdi(ps.name)));
+    }
 
     const s = store.state;
     syncBar.hidden = s.sync === 'live' || s.sync === 'idle' || (s.sync === 'loading' && !s.loadError);
@@ -223,7 +294,7 @@ export function ListView() {
           h('p.family-name', fam.name),
           h('h1.page-title', 'רשימת הקניות')),
         h('button.icon-btn', { type: 'button', 'aria-label': 'הגדרות משפחה וחשבון', onclick: () => navigate('/settings') }, icon('settings', 22))),
-      stats),
+      stats, totalLine),
     h('main.content#main',
       syncBar,
       h('div.card.add-card', form, h('p.chips-label', 'הוספה מהירה'), chips),

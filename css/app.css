@@ -345,3 +345,32 @@ select.input { padding-inline-end: 32px; appearance: none;
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
 }
+
+/* ── Prices ── */
+.total-line {
+  display: flex; flex-wrap: wrap; gap: 0 6px; align-items: baseline;
+  margin-top: 8px; font-size: 14px; color: var(--text);
+}
+.total-line strong { font: 700 17px/1.2 var(--font-display); color: var(--accent-ink); font-variant-numeric: tabular-nums; }
+.price, .price-link {
+  appearance: none; border: 0; cursor: pointer; font: 500 14px/1 var(--font);
+  padding: 4px 8px; border-radius: 6px; white-space: nowrap; font-variant-numeric: tabular-nums;
+}
+.price { background: var(--surface-2); color: var(--text); border: 1px solid var(--line); }
+.price:hover { border-color: var(--accent); }
+.price.is-muted { background: none; border: 0; color: var(--muted); cursor: default; padding-inline: 0; }
+.price-link { background: none; color: var(--accent); text-decoration: underline; text-underline-offset: 3px; padding-inline: 2px; }
+.match-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; max-height: 50vh; overflow-y: auto; }
+.match-list > li.muted, .match-list > li.form-error { padding: 8px 4px; }
+.match-row {
+  appearance: none; width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  text-align: start; background: var(--surface); color: var(--text); border: 1px solid var(--line); border-radius: var(--radius);
+  padding: 10px 12px; cursor: pointer; font: 400 15px/1.35 var(--font); min-height: var(--tap);
+}
+.match-row:hover { border-color: var(--accent); background: var(--surface-2); }
+.match-main { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.match-name { font-weight: 500; overflow-wrap: anywhere; }
+.match-price { font-weight: 700; color: var(--accent-ink); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.check-line { display: flex; align-items: flex-start; gap: 8px; font-size: 14px; color: var(--muted); }
+.check-line input { width: 18px; height: 18px; margin-top: 1px; accent-color: var(--accent); flex: none; }
+.total-line .total-sub { flex-basis: 100%; font-size: 13px; }

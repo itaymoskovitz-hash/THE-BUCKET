@@ -16,6 +16,7 @@ const RPC = {
   OWNER_CANNOT_LEAVE: 'בעלי המשפחה לא יכולים לעזוב. העבירו קודם את הבעלות או מחקו את המשפחה.',
   ALREADY_OWNER: 'את/ה כבר הבעלים.',
   CONFIRM_MISMATCH: 'שם המשפחה שהוקלד אינו תואם.',
+  STORE_NOT_FOUND: 'הסניף לא נמצא. נסו לבחור שוב.',
 };
 
 const AUTH = [

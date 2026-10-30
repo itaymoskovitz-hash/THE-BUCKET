@@ -137,6 +137,61 @@ export function SettingsView({ onFamiliesChanged }) {
     });
   }
 
+  // ── Victory branch for prices ──
+  const priceBox = h('div.stack');
+  async function renderPrices() {
+    if (fam.priceStoreId && !store.state.priceStore) await store.loadPrices();
+    const ps = store.state.priceStore;
+    const rows = [];
+    if (fam.priceStoreId && ps) {
+      rows.push(h('p', 'הסניף שלכם: ', h('strong', bdi(ps.name)), ps.city ? ` · ${ps.city}` : ''));
+      const at = await store.priceStatus().catch(() => null);
+      rows.push(h('p.muted.small', at ? `המחירים עודכנו לאחרונה: ${fmtDate(at)}` : 'המחירים לסניף הזה עוד לא נטענו. הם יופיעו אחרי העדכון היומי הבא.'));
+    } else {
+      rows.push(h('p.muted', 'בחרו את סניף ויקטורי שבו אתם קונים, ותראו ליד כל מוצר את המחיר שלו ואת הסכום המשוער של הרשימה.'));
+    }
+    if (isOwner) rows.push(h('button.btn.btn-secondary.align-start', { type: 'button', onclick: pickStore }, fam.priceStoreId ? 'החלפת סניף' : 'בחירת סניף'));
+    else if (!fam.priceStoreId) rows.push(h('p.hint', 'רק בעלי המשפחה יכולים לבחור סניף.'));
+    rows.push(h('p.hint', 'המחירים מגיעים מהקבצים הרשמיים שהרשת מפרסמת לפי חוק שקיפות המחירים. הם עשויים להיות שונים מהמחיר בקופה, ומבצעים לא נכללים.'));
+    priceBox.replaceChildren(...rows);
+  }
+  function pickStore() {
+    const q = h('input.input#store-q', { type: 'search', autocomplete: 'off', placeholder: 'עיר או שם סניף', 'aria-label': 'חיפוש סניף' });
+    const list = h('ul.match-list', { 'aria-live': 'polite' });
+    let timer, seq = 0;
+    async function run() {
+      const my = ++seq;
+      list.replaceChildren(h('li.muted', 'מחפש…'));
+      try {
+        const stores = await store.searchStores(q.value);
+        if (my !== seq) return;
+        list.replaceChildren(...(stores.length ? stores.map((st) => h('li',
+          h('button.match-row', { type: 'button', onclick: async (e) => {
+            try {
+              await busy(e.currentTarget, () => store.setFamilyStore(fam.id, st.chain_id, st.store_id));
+              fam.priceStoreId = st.store_id; fam.priceChainId = st.chain_id;
+              dlg.close(); toast('הסניף נשמר', { kind: 'success' });
+              setTimeout(renderPrices, 400);
+            } catch (err) { toast(heError(err), { kind: 'error' }); }
+          } },
+          h('span.match-main', h('span.match-name', bdi(st.name)), h('span.muted.small', [st.city, st.address].filter(Boolean).join(' · '))))))
+          : [h('li.muted', q.value.trim() ? 'לא נמצאו סניפים.' : 'רשימת הסניפים עוד לא נטענה. היא תופיע אחרי העדכון הראשון של המחירים.')]));
+      } catch (err) { if (my === seq) list.replaceChildren(h('li.form-error', heError(err))); }
+    }
+    q.addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(run, 250); });
+    const dlg = openDialog({
+      title: 'בחירת סניף ויקטורי',
+      body: h('div.stack', q, list),
+      actions: [
+        fam.priceStoreId && h('button.btn.btn-text.btn-danger-text', { type: 'button', onclick: async () => {
+          try { await store.setFamilyStore(fam.id, null, null); fam.priceStoreId = null; dlg.close(); renderPrices(); } catch (err) { toast(heError(err), { kind: 'error' }); }
+        } }, 'ביטול הסניף'),
+        h('button.btn.btn-secondary', { type: 'button', onclick: () => dlg.close() }, 'סגירה'),
+      ].filter(Boolean),
+    });
+    q.focus(); run();
+  }
+
   // ── Family switcher (only if the user belongs to more than one) ──
   const switcher = store.state.families.length > 1 && h('section.card',
     h('h2.section-title', 'המשפחות שלי'),
@@ -151,6 +206,7 @@ export function SettingsView({ onFamiliesChanged }) {
         h('h1.page-title', 'הגדרות'))),
     h('main.content.settings#main',
       h('section.card', h('h2.section-title', icon('users', 20), 'המשפחה'), nameForm),
+      h('section.card', h('h2.section-title', 'מחירים מוויקטורי'), priceBox),
       switcher,
       h('section.card', h('h2.section-title', 'חברי המשפחה'), membersList),
       isOwner && h('section.card',
@@ -175,6 +231,7 @@ export function SettingsView({ onFamiliesChanged }) {
         h('a', { href: '#/accessibility' }, 'הצהרת נגישות'))));
 
   loadMembers();
+  renderPrices();
   if (isOwner) loadInvites();
   return { el: view, focus: () => {} };
 }
